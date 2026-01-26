@@ -1,0 +1,7 @@
+{
+  "name": "spice",
+  "version": "0.0.1",
+  "description": "The official implementation of SPICE: A Synergistic, Precise, Iterative, and Customizable Image Editing Workflow.",
+  "author": "Kenan Tang",
+  "license": "CC BY-NC-SA"
+}
