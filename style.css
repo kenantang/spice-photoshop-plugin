@@ -12,3 +12,30 @@ body {
     border-radius: 4px;
     padding: 16px;
   }
+
+/* Custom Disabled State */
+.disabled-btn {
+    pointer-events: none;  /* 1. Disables clicking and hovering */
+    cursor: default;
+    opacity: 1 !important; /* 2. Prevent default fading */
+}
+
+/* Force the icon to be your specific grey when this class is applied */
+.disabled-btn svg {
+    color: #4a4a4a !important; /* 3. Your desired grey color */
+    fill: #4a4a4a !important;
+}
+
+/* Ensure enabled buttons are white */
+sp-action-button:not(.disabled-btn) svg {
+    color: #ffffff;
+    fill: #ffffff;
+}
+
+/* Common sizing (keep this) */
+sp-action-button svg {
+    width: 14px;
+    height: 14px;
+    display: block;
+    margin: auto;
+}

@@ -59,6 +59,14 @@ These two parameters are sufficient to achieve high-quality and controllable res
 
 ## Version Notes
 
+- **0.0.2**
+  - Partially fixes full-image selection bug. Now API is not called when the full image is selected.
+  - Partially fixes sub-pixel image shift. Now the coordinates are correct, but Photoshop snaps the pasted image to an unwanted grid. The alignment is correct when the zoom level is at the same level when the mask was drawn. Practically, the image shift will not be a problem, as the mask is always drawn at a zoomed-in level.
+  - Partially fixes GUI flashing. Now after flashing, the view is still maintained as the same before flashing. This is at least less annoying.
+  - Implements error message for no active selection.
+  - Supports prompt undo and redo.
+  - Supports showing the generation time of the previous run on the button. The progress API interferes with generation and is thus unusable, so no progress bar will be implemented.
+
 - **0.0.1**
   - Initial minimal working version
   - Uses Automatic1111 Web UI as the backend
@@ -69,15 +77,13 @@ These two parameters are sufficient to achieve high-quality and controllable res
 
    Selecting the entire image causes an error, likely due to an edge case in selection inversion.
 
-   *Planned improvement:* check selection area before inverting.
+   *Planned improvement:* Try fix the inversion error.
 
-2. **One-pixel image shift**  
+2. **Sub-pixel image shift**  
 
-   The output image frequently shift by one pixel. This issue originates from the image-pasting step in Photoshop, NOT from the editing model.
+   The output image frequently shift at the sub-pixel level. This issue originates from the image-pasting step in Photoshop, NOT from the editing model.
 
-   **Workaround:**  Just move the edited result by one pixel in the correct direction.
-
-   *Planned improvement:* the fix is likely in the step where the bounding box is extended to a square, as the output never shifted in both X and Y directions simultaneously.
+   *Planned improvement:* Change pasting method to prevent Photoshop from automatic snapping.
 
 3. **GUI flashing**  
 
@@ -85,19 +91,7 @@ These two parameters are sufficient to achieve high-quality and controllable res
 
    *Planned improvement:* these basic image operations should be handled completely by the JS code, but not Photoshop GUI operations
 
-4. **Silent failure when no selection is active**
-
-   Clicking **Generate** without an active selection causes the UI to fail silently, leaving the button unresponsive.
-
-   *Planned improvement:* handle exceptions in the editing function
-
-5. **Prompt cannot be recovered**  
-   
-   If the prompt is accidentally edited or deleted, there is currently no undo/redo mechanism.  
-   
-   *Planned improvement:* add **Undo** and **Redo** buttons above the prompt box.
-
-6. **PPI inconsistency issues**  
+4. **PPI inconsistency issues**  
    The current image-pasting logic is not robust to different PPI settings.  
    
    **Workaround:**  
@@ -106,15 +100,7 @@ These two parameters are sufficient to achieve high-quality and controllable res
 
     *Planned improvement:* since the GUI operations are sensitive to PPI, try to find a way to avoid GUI operations, similar to the solution of GUI flashing
 
-
-7. **Missing progress indicator**  
-   
-   The frontend currently lacks a progress bar.  
-   
-   *Planned improvement:* indicate progress by changing the **Generate** button color.  
-   (The Automatic1111 API supports querying generation progress.)
-
-8. **Hard-coded advanced parameters**  
+5. **Hard-coded advanced parameters**  
   
    Negative prompts, models, and other advanced parameters are currently hard-coded.  
   

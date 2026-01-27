@@ -70,6 +70,16 @@ function getExtendedBoundingBox(selectionBounds, docW, docH) {
         }
     }
 
+    // These are needed to eliminate shift. 
+    // The values here can be multiples of .5,
+    // but the active layer bounding box coodinates are always integers.
+    top = Math.round(top);
+    left = Math.round(left);
+    bottom = Math.round(bottom);
+    right = Math.round(right);
+
+    console.log("EBB: top, left, bottom right: ", top, left, bottom, right);
+
     // Crop to image bounds
     return {
         top: Math.max(0, top),
@@ -109,59 +119,99 @@ async function invertSelection() {
     );
 }
 
+// Helper: Precisely sets the selection to specific pixel coordinates
+async function setSelection(top, left, bottom, right) {
+    await batchPlay(
+        [{
+            _obj: "set",
+            _target: [{ _ref: "channel", _enum: "channel", _value: "selection" }],
+            to: {
+                _obj: "rectangle",
+                top: { _unit: "pixelsUnit", _value: top },
+                left: { _unit: "pixelsUnit", _value: left },
+                bottom: { _unit: "pixelsUnit", _value: bottom },
+                right: { _unit: "pixelsUnit", _value: right }
+            }
+        }],
+        { synchronousExecution: true }
+    );
+}
+
 async function extractRegionAsBase64(doc, bounds, isMask) {
     let base64Result = "";
     
+    // We will save this temporary file from a duplicated document
     const tempFolder = await fs.getTemporaryFolder();
     const fileName = isMask ? "temp_mask.png" : "temp_img.png";
     const tempFile = await tempFolder.createFile(fileName, { overwrite: true });
 
     await core.executeAsModal(async () => {
-        const savedState = doc.activeHistoryState;
+        // 1. SNAPSHOT: Remember the state so we can undo the mask prep on the main doc
+        const initialState = doc.activeHistoryState;
+
+        let tempDoc = null;
 
         try {
-            // --- STEP 1: PREPARE MASK (If needed) ---
+            // --- STEP 1: PREPARE THE VIEW ON THE MAIN DOC ---
+            // We paint the mask on the main document first. 
+            // Don't worry, we revert this immediately after duplicating.
             if (isMask) {
-                // Create a new empty layer for the mask
+                // Create a temp layer to hold our black/white mask
                 const maskLayer = await doc.layers.add();
-                maskLayer.name = "TempMask";
+                maskLayer.name = "Temp_Generation_Mask";
 
-                // 1. Fill "Selected" area with White
+                // A. Fill the USER SELECTION with White
+                // We use your existing selection (marching ants), not just the box
                 await fillSelection(255, 255, 255);
-                
-                // 2. Invert selection to the background
+
+                // B. Invert Selection -> Fill the REST with Black
                 await invertSelection();
-                
-                // 3. Fill "Background" with Black
                 await fillSelection(0, 0, 0);
                 
-                // 4. Deselect
+                // C. Deselect (so the selection outline doesn't interfere)
                 await doc.selection.deselect();
             }
 
-            // --- STEP 2: CROP ---
-            // We crop AFTER painting the mask so coordinates align
-            await doc.crop({
+            // --- STEP 2: DUPLICATE (FLATTENED) ---
+            // This creates a NEW document that looks exactly like your current view.
+            // 'true' means "merge all layers", creating a single flat image.
+            // This avoids the clipboard entirely.
+            tempDoc = await doc.duplicate("Temp_Export_Doc", true);
+
+            // --- STEP 3: REVERT MAIN DOC ---
+            // Immediately restore the main document to its original state.
+            // The user barely sees the change because we duplicate so fast.
+            doc.activeHistoryState = initialState;
+
+            // --- STEP 4: CROP THE TEMP DOC ---
+            // Now we working on the hidden/background 'tempDoc'
+            await tempDoc.crop({
                 top: bounds.top, 
                 left: bounds.left, 
                 bottom: bounds.bottom, 
                 right: bounds.right
             });
 
-            // --- STEP 3: SAVE ---
-            await doc.saveAs.png(tempFile, { compression: 0 }, true);
+            // --- STEP 5: SAVE ---
+            // It is already flattened, so we just save.
+            await tempDoc.saveAs.png(tempFile, { compression: 0 }, true);
 
         } catch (e) {
             console.error("Extraction error:", e);
             throw e;
         } finally {
-            // --- STEP 4: REVERT ---
-            if (savedState) {
-                doc.activeHistoryState = savedState;
+            // Cleanup: Close the temp doc without saving changes
+            if (tempDoc) {
+                await tempDoc.closeWithoutSaving();
+            }
+            // Double check we are back to normal on main doc
+            if (doc.activeHistoryState !== initialState) {
+                doc.activeHistoryState = initialState;
             }
         }
     }, { commandName: isMask ? "Prepare Mask" : "Prepare Image" });
 
+    // Read and convert
     const arrayBuffer = await tempFile.read({ format: formats.binary });
     base64Result = base64ArrayBuffer(arrayBuffer);
     return base64Result;
@@ -177,6 +227,51 @@ function base64ArrayBuffer(buffer) {
     return btoa(binary);
 }
 
+async function isSelectionStrictlyFull(doc) {
+    // 1. Fast Check: If bounds don't match doc size, it's definitely not full
+    let b = null;
+    try {
+        b = doc.selection.bounds;
+    } catch (e) { return false; } // No selection at all
+
+    if (!b) return false;
+    if (b.width !== doc.width || b.height !== doc.height) return false; 
+
+    // 2. The Inversion Test
+    let isFull = false;
+
+    await core.executeAsModal(async () => {
+        const savedState = doc.activeHistoryState;
+        try {
+            await invertSelection(); 
+            
+            // --- CRITICAL FIX HERE ---
+            let invBounds = null;
+            try {
+                invBounds = doc.selection.bounds;
+            } catch (e) {
+                // It threw an error -> Selection is empty
+                invBounds = null;
+            }
+
+            // If invBounds is null, the inverse is empty -> Original was Full.
+            if (!invBounds) {
+                isFull = true; 
+            } else {
+                // Inverse has bounds -> Original had holes (not strictly full).
+                isFull = false;
+            }
+
+        } catch (e) {
+            console.error("Check failed", e);
+        } finally {
+            doc.activeHistoryState = savedState;
+        }
+    }, { commandName: "Check Full Selection" });
+
+    return isFull;
+}
+
 // --- 4. MAIN ACTION ---
 
 async function onGenerate() {
@@ -187,10 +282,33 @@ async function onGenerate() {
     const btn = document.getElementById("btnGenerate");
 
     try {
-        const check = doc.selection.bounds; 
-    } catch(e) {
-        return alert("Please make a selection first.");
+        selectionBounds = doc.selection.bounds;
+        
+        // sometimes UXP returns null instead of throwing
+        if (!selectionBounds) throw new Error("No selection");
+        
+    } catch (e) {
+        const msg = document.getElementById("statusMessage");
+        msg.textContent = "Please make a selection first.";
+        msg.style.display = "block";
+        
+        // Hide it automatically after 3 seconds
+        setTimeout(() => { msg.style.display = "none"; }, 3000);
+        return; 
     }
+
+    const isFullImage = await isSelectionStrictlyFull(doc);
+    if (isFullImage) {
+        const msg = document.getElementById("statusMessage");
+        msg.textContent = "Full selection causes a bug for inversion.";
+        msg.style.display = "block";
+        
+        // Hide it automatically after 3 seconds
+        setTimeout(() => { msg.style.display = "none"; }, 3000);
+        return; 
+    }
+
+    const startTime = Date.now();
 
     // 3. DISABLE BUTTON & UPDATE TEXT
     btn.setAttribute("disabled", "true"); // Disable button
@@ -260,11 +378,24 @@ async function onGenerate() {
 
     } catch (err) {
         console.error(err);
-        alert("Generation Failed: " + err.message);
+        // Use your preferred error handling (alert or status message)
+        const msg = document.getElementById("statusMessage");
+        if(msg) {
+             msg.textContent = "Failed: " + err.message;
+             msg.style.display = "block";
+        } else {
+             alert("Generation Failed: " + err.message);
+        }
     } finally {
         // 3. RE-ENABLE BUTTON (Runs whether success or fail)
+        const endTime = Date.now();
+        const duration = (endTime - startTime) / 1000; // Convert ms to seconds
+        
+        // Re-enable button
         btn.removeAttribute("disabled");
-        btn.textContent = originalText;
+        
+        // Update text to format: "Generate [9.55s]"
+        btn.textContent = `Generate [${duration.toFixed(2)}s]`;
     }
 }
 
@@ -315,36 +446,182 @@ async function placeResultOnLayer(doc, base64Str, bounds) {
     const tempFolder = await fs.getTemporaryFolder();
     const file = await tempFolder.createFile("result.png", { overwrite: true });
     
-    // 1. Write the Base64 string to a file
+    // 1. Write Base64 to file
     const binary = atob(base64Str);
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
     await file.write(bytes.buffer, { format: formats.binary });
 
-    const token = fs.createSessionToken(file);
-
     await core.executeAsModal(async () => {
-        // A. Place the file (Smart Object created at document center)
-        await batchPlay([{
-            _obj: "placeEvent",
-            ID: 6,
-            null: { _path: token, _kind: "local" },
-            freeTransformCenterState: { _enum: "quadCenterState", _value: "QCSAverage" },
-            offset: { _obj: "offset", horizontal: { _unit: "pixelsUnit", _value: 0 }, vertical: { _unit: "pixelsUnit", _value: 0 } }
-        }], { synchronousExecution: true });
+        // --- STEP A: OPEN TEMP DOC ---
+        // Open the generated result in a new tab
+        const tempDoc = await app.open(file);
+        const sourceLayer = tempDoc.layers[0]; // The flat image layer
 
-        // B. Measure Smart Object Position (BEFORE Rasterizing)
-        // This captures the precise sub-pixel location (e.g., 512.5)
-        const currentBounds = await getActiveLayerBoundsBP();
-        
-        // C. Calculate Offset
-        const deltaX = bounds.left - currentBounds.left;
-        const deltaY = bounds.top - currentBounds.top;
+        // --- STEP B: DUPLICATE TO MAIN DOC ---
+        // This pushes the layer directly into your original document.
+        // It bypasses the clipboard and works regardless of zoom level.
+        const newLayer = await sourceLayer.duplicate(doc);
 
-        // D. Move the Smart Object
-        await translateActiveLayerBP(deltaX, deltaY);
+        // --- STEP C: CLOSE TEMP DOC ---
+        await tempDoc.closeWithoutSaving();
+
+        // --- STEP D: ALIGN ---
+        // Now we are back on the main doc, and 'newLayer' is active.
         
+        // 1. Get Current Position (It usually spawns at 0,0 or center)
+        const currentPos = await getActiveLayerTopLeft();
+        
+        // 2. Calculate Offset
+        const deltaX = bounds.left - currentPos.left;
+        const deltaY = bounds.top - currentPos.top;
+
+        // 3. Move
+        // We use the "move" command (Move Tool) instead of "transform" 
+        // because "transform" throws errors if the layer is locked or empty.
+        if (Math.round(deltaX) !== 0 || Math.round(deltaY) !== 0) {
+            await batchPlay(
+                [{
+                    _obj: "move",
+                    _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+                    to: {
+                        _obj: "offset",
+                        horizontal: { _unit: "pixelsUnit", _value: Math.round(deltaX) },
+                        vertical: { _unit: "pixelsUnit", _value: Math.round(deltaY) }
+                    }
+                }],
+                { synchronousExecution: true }
+            );
+        }
+
+        // --- STEP E: DESELECT EVERYTHING ---
+        // This removes the original selection "ants" so you can see the result clearly.
+        await doc.selection.deselect();
+
     }, { commandName: "Place Generated Result" });
 }
 
+// Ensure this helper is present and handles potential unit objects
+async function getActiveLayerTopLeft() {
+    const result = await batchPlay(
+        [{
+            _obj: "get",
+            _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+            _property: [{ _property: "bounds" }]
+        }],
+        { synchronousExecution: true }
+    );
+
+    if (!result[0] || !result[0].bounds) throw new Error("Could not retrieve layer bounds");
+
+    const b = result[0].bounds;
+    return {
+        top: b.top._value !== undefined ? b.top._value : b.top,
+        left: b.left._value !== undefined ? b.left._value : b.left
+    };
+}
+
 document.getElementById("btnGenerate").addEventListener("click", onGenerate);
+
+// --- 5. PROMPT HISTORY LOGIC ---
+
+// Configuration
+const MAX_HISTORY = 50;
+const DEBOUNCE_MS = 400;
+
+// State
+let promptHistory = [];
+let historyIndex = -1;
+let debounceTimer = null;
+
+const txtPrompt = document.getElementById("txtPrompt");
+const btnUndo = document.getElementById("btnUndo");
+const btnRedo = document.getElementById("btnRedo");
+
+// Initialize History with current default value
+function initHistory() {
+    // 1. Try to get the value property
+    let val = txtPrompt.value;
+    
+    // 2. If empty, grab the text strictly from inside the HTML tags
+    if (!val) {
+        val = txtPrompt.textContent ? txtPrompt.textContent.trim() : "";
+        
+        // IMPORTANT: Sync it back to the UI so they match
+        if (val) {
+            txtPrompt.value = val;
+        }
+    }
+
+    // 3. Initialize history with the correct starting text
+    promptHistory = [val];
+    historyIndex = 0;
+    
+    updateButtons();
+}
+
+function updateButtons() {
+    // Helper to toggle the class
+    const toggleDisabled = (btn, shouldDisable) => {
+        if (shouldDisable) {
+            btn.classList.add("disabled-btn");
+        } else {
+            btn.classList.remove("disabled-btn");
+        }
+    };
+
+    // Apply logic
+    toggleDisabled(btnUndo, historyIndex <= 0);
+    toggleDisabled(btnRedo, historyIndex >= promptHistory.length - 1);
+}
+
+function pushToHistory(val) {
+    // If we are in the middle of history and type new stuff, 
+    // remove everything after current index
+    if (historyIndex < promptHistory.length - 1) {
+        promptHistory = promptHistory.slice(0, historyIndex + 1);
+    }
+    
+    // Don't push if identical to current (prevents duplicates)
+    if (promptHistory[historyIndex] === val) return;
+
+    promptHistory.push(val);
+    if (promptHistory.length > MAX_HISTORY) {
+        promptHistory.shift();
+    } else {
+        historyIndex++;
+    }
+    updateButtons();
+}
+
+// Event Listeners
+txtPrompt.addEventListener("input", (e) => {
+    // Clear existing timer to reset the debounce window
+    clearTimeout(debounceTimer);
+    
+    const val = txtPrompt.value;
+    
+    // Set new timer
+    debounceTimer = setTimeout(() => {
+        pushToHistory(val);
+    }, DEBOUNCE_MS);
+});
+
+btnUndo.addEventListener("click", () => {
+    if (historyIndex > 0) {
+        historyIndex--;
+        txtPrompt.value = promptHistory[historyIndex];
+        updateButtons();
+    }
+});
+
+btnRedo.addEventListener("click", () => {
+    if (historyIndex < promptHistory.length - 1) {
+        historyIndex++;
+        txtPrompt.value = promptHistory[historyIndex];
+        updateButtons();
+    }
+});
+
+// Initialize on load
+initHistory();

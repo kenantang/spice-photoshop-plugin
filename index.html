@@ -23,7 +23,23 @@
 </head>
 <body>
   <div>
-      <sp-label>Prompt</sp-label>
+      <div class="row">
+          <sp-label>Prompt</sp-label>
+          <div style="display: flex; gap: 4px;">
+              <sp-action-button id="btnUndo" quiet size="s" title="Undo">
+                   <svg slot="icon" viewBox="0 0 24 24" style="width: 14px; height: 14px;">
+                      <path fill="currentColor" d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/>
+                  </svg>
+              </sp-action-button>
+              
+              <sp-action-button id="btnRedo" quiet size="s" title="Redo">
+                   <svg slot="icon" viewBox="0 0 24 24" style="width: 14px; height: 14px;">
+                      <path fill="currentColor" d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/>
+                  </svg>
+              </sp-action-button>
+          </div>
+      </div>
+
       <sp-textarea id="txtPrompt" placeholder="Describe the generation...">
           masterpiece, best quality, 1girl, hakurei reimu
       </sp-textarea>
@@ -46,5 +62,7 @@
   <footer>
     <sp-button id="btnGenerate" variant="cta">Generate</sp-button>
   </footer>
+
+  <sp-label id="statusMessage" style="display: none; align-self: center; margin-bottom: 5px;"></sp-label>
 </body>
 </html>
