@@ -59,6 +59,11 @@ These two parameters are sufficient to achieve high-quality and controllable res
 
 ## Version Notes
 
+- **0.0.3**
+  - Supports changing parameters in a separate "SPICE Settings" panel. These parameters do not need to be changed frequently, so no sliders are used for them.
+  - Adds a reminder message when the backend is not active. The backend can be configured in the settings panel.
+  - Uses new icons.
+
 - **0.0.2**
   - Partially fixes full-image selection bug. Now API is not called when the full image is selected.
   - Partially fixes sub-pixel image shift. Now the coordinates are correct, but Photoshop snaps the pasted image to an unwanted grid. The alignment is correct when the zoom level is at the same level when the mask was drawn. Practically, the image shift will not be a problem, as the mask is always drawn at a zoomed-in level.
@@ -79,11 +84,11 @@ These two parameters are sufficient to achieve high-quality and controllable res
 
    *Planned improvement:* Try fix the inversion error.
 
-2. **Sub-pixel image shift**  
+2. **Sub-pixel image shift (GUI artifact)**  
 
-   The output image frequently shift at the sub-pixel level. This issue originates from the image-pasting step in Photoshop, NOT from the editing model.
+   The output image appears to shift at the sub-pixel level, when the viewport is zoomed out for a large (4K) image. However, this is purely a Photoshop GUI visual artifact. When the generated result is merged with the existing layer, the shift does not exist. 
 
-   *Planned improvement:* Change pasting method to prevent Photoshop from automatic snapping.
+   *Planned improvement:* Change pasting method to prevent Photoshop from creating this visual artifact.
 
 3. **GUI flashing**  
 
@@ -99,12 +104,6 @@ These two parameters are sufficient to achieve high-quality and controllable res
    - Resize the canvas while preserving PPI
 
     *Planned improvement:* since the GUI operations are sensitive to PPI, try to find a way to avoid GUI operations, similar to the solution of GUI flashing
-
-5. **Hard-coded advanced parameters**  
-  
-   Negative prompts, models, and other advanced parameters are currently hard-coded.  
-  
-   *Planned improvement:* add a dedicated **settings panel** for infrequently changed parameters.
 
 ## License
 
