@@ -1,12 +1,24 @@
 # SPICE Photoshop Plugin
 
-This repository contains the official implementation of **SPICE: A Synergistic, Precise, Iterative, and Customizable Image Editing Workflow**.  
-For the paper and reference implementation, see:  
-https://github.com/kenantang/spice
+This repository contains the official implementation of [SPICE: A Synergistic, Precise, Iterative, and Customizable Image Editing Workflow](https://github.com/kenantang/spice).  
 
-The **Photoshop plugin** is the recommended way to use SPICE. It tightly integrates SPICE’s iterative, error-correcting workflow with Photoshop’s powerful editing tools, enabling a seamless and efficient image editing experience.
+The free **Photoshop plugin** is the recommended way to use SPICE:
+1. It tightly integrates SPICE’s iterative, error-correcting workflow with Photoshop’s powerful editing tools, enabling a seamless and efficient image editing experience.
+2. During iterative editing, SPICE guarantees **zero quality degradation and zero pixel shift**, eliminating two fatal flaws of Nano Banana Pro in Photoshop.
 
-The first version of the plugin has been **submitted to Adobe** and is currently **under review**. Upon approval, the plugin will be downloadable from the Adobe Marketplace. However, you can already use the code in this repository, if you have the Adobe UXP Developer Tools on your device.
+The plugin is downloadable from the [Adobe Marketplace](https://exchange.adobe.com/apps/cc/c09047be/spice). You can also directly use the code in this repository, if you have the Adobe UXP Developer Tools on your device.
+
+[02.02.2026] The plugin requires a backend server that runs SPICE. If you are new to Automatic1111 or ComfyUI, you can contact the SPICE paper authors via email for a temporary API link for a trial. If you have any questions regarding the setup, feel free to open a GitHub issue.
+
+## Demonstration
+
+This short demonstration video shows how to use SPICE to repair artifacts on the image, including:
+1. Eyes of different sizes
+2. Corrupted patterns on the clothes
+
+The video shows that you can simply **select a region**, click "Generate", and the artifacts will automatically be repaird.
+
+https://github.com/user-attachments/assets/d672143b-c508-4758-a006-cff2661ab97c
 
 ## Getting Started
 
@@ -18,6 +30,8 @@ SPICE requires a backend that supports image inpainting.
 
 - **Supported:** Automatic1111 Web UI  
 - **Coming soon:** ComfyUI
+
+To set up the Automatic1111 backend, you need to install the ControlNet extension and download the model as in [this tutorial](https://github.com/kenantang/spice?tab=readme-ov-file#stable-diffusion-models).
 
 Start Automatic1111 with API support enabled:
 
