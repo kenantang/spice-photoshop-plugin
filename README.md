@@ -16,7 +16,7 @@ This short demonstration video shows how to use SPICE to repair artifacts on the
 1. Eyes of different sizes
 2. Corrupted patterns on the clothes
 
-The video shows that you can simply **select a region**, click "Generate", and the artifacts will automatically be repaird.
+The video shows that you can simply **select a region**, click the "Generate" button, and the artifacts will automatically be repaired. Note that the prompt can be extremely simple, without specifying what you would like to do ("make eyes the same size" or "repair the scrambled patterns").
 
 https://github.com/user-attachments/assets/d672143b-c508-4758-a006-cff2661ab97c
 
