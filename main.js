@@ -167,7 +167,7 @@ async function onGenerate() {
                     "args": [{
                         "enabled": true,
                         "module": "canny",
-                        "model": "diffusers_xl_canny_mid",
+                        "model": "diffusers_xl_canny_mid [112a778d]",
                         "weight": 1.0,
                         "resize_mode": "Crop and Resize",
                         "control_mode": "My prompt is more important",
