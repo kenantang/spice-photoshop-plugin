@@ -64,6 +64,7 @@ function setupEventListeners() {
     const btnUndo = document.getElementById("btnUndo");
     const btnRedo = document.getElementById("btnRedo");
 
+    txtPrompt.addEventListener("mouseleave", () => { txtPrompt.blur(); });
     txtPrompt.addEventListener("input", () => {
         clearTimeout(debounceTimer);
         const val = txtPrompt.value;
@@ -94,6 +95,25 @@ function setupEventListeners() {
             txtPrompt.value = promptHistory[historyIndex];
             updateButtons();
         }
+    });
+
+    const slideDenoise = document.getElementById("slideDenoise");
+    const slideControlEnd = document.getElementById("slideControlEnd");
+
+    const denoiseLabel = slideDenoise.closest("div").previousElementSibling;
+    const controlLabel = slideControlEnd.closest("div").previousElementSibling;
+
+    denoiseLabel.textContent = `Denoising Strength = ${Math.round(parseFloat(slideDenoise.value) * 100)}%`;
+    controlLabel.textContent = `ControlNet Steps = ${Math.round(parseFloat(slideControlEnd.value) * 100)}%`;
+
+    slideDenoise.addEventListener("input", () => {
+        const pct = Math.round(parseFloat(slideDenoise.value) * 100);
+        denoiseLabel.textContent = `Denoising Strength = ${pct}%`;
+    });
+
+    slideControlEnd.addEventListener("input", () => {
+        const pct = Math.round(parseFloat(slideControlEnd.value) * 100);
+        controlLabel.textContent = `ControlNet Steps = ${pct}%`;
     });
 
     btnGenerate.addEventListener("click", onGenerate);
@@ -127,24 +147,22 @@ async function onGenerate() {
         return;
     }
 
-    // 3. CHECK FULL SELECTION BUG
-    if (await workflow.isSelectionStrictlyFull(doc)) {
-        showStatusMessage("Full selection causes a bug for inversion.");
-        return;
-    }
+    const isFullSelection = await workflow.isSelectionStrictlyFull(doc);
 
     const startTime = Date.now();
     btn.setAttribute("disabled", "true");
-    btn.textContent = "Generating...";
+    btn.textContent = "Generating [0%]";
 
     try {
         const promptVal = document.getElementById("txtPrompt").value;
         const denoiseVal = parseFloat(document.getElementById("slideDenoise").value);
         const controlStepVal = parseFloat(document.getElementById("slideControlEnd").value);
-        
+
         const bounds = utils.getExtendedBoundingBox(doc.selection.bounds, doc.width, doc.height);
 
-        const maskImgB64 = await workflow.extractRegionAsBase64(doc, bounds, true);
+        const maskImgB64 = isFullSelection
+            ? workflow.makeWhiteMaskBase64(bounds.right - bounds.left, bounds.bottom - bounds.top)
+            : await workflow.extractRegionAsBase64(doc, bounds, true);
         const initImgB64 = await workflow.extractRegionAsBase64(doc, bounds, false);
 
         // API Call using dynamic settings
@@ -179,14 +197,41 @@ async function onGenerate() {
             }
         };
 
-        const response = await fetch(settings.API_URL, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload)
-        });
+        const progressUrl = new URL("/sdapi/v1/progress", settings.API_URL).href;
+        let lastPct = 0;
+        let pollActive = true;
+        const pollProgress = async () => {
+            if (!pollActive) return;
+            try {
+                const p = await fetch(progressUrl);
+                if (p.ok) {
+                    const pJson = await p.json();
+                    const pct = Math.round((pJson.progress || 0) * 100);
+                    if (pct >= lastPct) {
+                        lastPct = pct;
+                        btn.textContent = `Generating [${pct}%]`;
+                    }
+                }
+            } catch (_) {}
+            if (pollActive) setTimeout(pollProgress, config.PROGRESS_POLL_MS);
+        };
+        setTimeout(pollProgress, config.PROGRESS_POLL_MS);
+
+        const apiStart = Date.now();
+        let response;
+        try {
+            response = await fetch(settings.API_URL, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+        } finally {
+            pollActive = false;
+        }
 
         if (!response.ok) throw new Error(`API Error: ${response.status}`);
         const json = await response.json();
+        console.log(`[spice] API call took ${((Date.now() - apiStart) / 1000).toFixed(2)}s`);
         const resultB64 = json.images ? json.images[0] : null;
 
         if (!resultB64) throw new Error("API returned no image data.");

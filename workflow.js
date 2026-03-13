@@ -347,6 +347,11 @@ async function extractRegionAsBase64(doc, bounds, isMask) {
     return encodeRGBAtoPNG(rgba, width, height);
 }
 
+function makeWhiteMaskBase64(width, height) {
+    const rgba = new Uint8Array(width * height * 4).fill(255);
+    return encodeRGBAtoPNG(rgba, width, height);
+}
+
 async function isSelectionStrictlyFull(doc) {
     let isFull = false;
     // Fast fail checks
@@ -383,35 +388,47 @@ async function placeResultOnLayer(doc, base64Str, bounds) {
 
     const { rgba, width: resultWidth, height: resultHeight } = decodePNG(bytes);
 
-    await core.executeAsModal(async () => {
-        const newLayer = await doc.layers.add();
-        newLayer.name = "SPICE Result";
-
-        const imgData = await imaging.createImageDataFromBuffer(rgba, {
-            width: resultWidth,
-            height: resultHeight,
-            components: 4,
-            colorSpace: "RGB"
-        });
-
-        await imaging.putPixels({
+    await core.executeAsModal(async (executionContext) => {
+        const suspensionID = await executionContext.hostControl.suspendHistory({
             documentID: doc.id,
-            layerID: newLayer.id,
-            targetBounds: {
-                left: bounds.left,
-                top: bounds.top,
-                right: bounds.left + resultWidth,
-                bottom: bounds.top + resultHeight
-            },
-            imageData: imgData
+            name: "SPICE"
         });
 
-        await doc.selection.deselect();
-    }, { commandName: "Place Generated Result" });
+        try {
+            const newLayer = await doc.layers.add({ name: "SPICE Result" });
+
+            const imgData = await imaging.createImageDataFromBuffer(rgba, {
+                width: resultWidth,
+                height: resultHeight,
+                components: 4,
+                colorSpace: "RGB"
+            });
+
+            await imaging.putPixels({
+                documentID: doc.id,
+                layerID: newLayer.id,
+                targetBounds: {
+                    left: bounds.left,
+                    top: bounds.top,
+                    right: bounds.left + resultWidth,
+                    bottom: bounds.top + resultHeight
+                },
+                imageData: imgData
+            });
+
+            await doc.selection.deselect();
+
+            await executionContext.hostControl.resumeHistory(suspensionID, true);
+        } catch (e) {
+            await executionContext.hostControl.resumeHistory(suspensionID, false);
+            throw e;
+        }
+    }, { commandName: "SPICE" });
 }
 
 module.exports = {
     extractRegionAsBase64,
     isSelectionStrictlyFull,
+    makeWhiteMaskBase64,
     placeResultOnLayer
 };

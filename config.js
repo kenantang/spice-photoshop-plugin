@@ -10,7 +10,8 @@ const DEFAULTS = {
     HISTORY: {
         MAX_ITEMS: 50,
         DEBOUNCE_MS: 400
-    }
+    },
+    PROGRESS_POLL_MS: 200
 };
 
 const STORAGE_KEY = "spice_plugin_settings";
