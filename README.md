@@ -73,6 +73,10 @@ These two parameters are sufficient to achieve high-quality and controllable res
 
 ## Version Notes
 
+- **0.0.6**
+  - The input image and mask to the API is now processed as 24-bit PNGs. The previous version used 32-bit PNGs, which led to intermittent errors when selection touched the boundary of the canvas. Stripping off the alpha channel has no effect on generated results, as the backend diffusion model is an RGB-only model.
+  - The input image, mask, and output image are all saved locally in the plugin temporary file folder. In the future, this will be updated as an option to support data collection.
+
 - **0.0.5**
   - Fixes full selection issue. With full selection, if the Denoising Strength is set to 100% and the ControlNet Steps is set to 0%, the inpainting is effectively generation from scratch. This fix allows the interface to support both generation and editing, without going back to the Forge interface.
   - Condenses multiple operations into one, when pasting the generated result. Now a single Undo operation can revert the result. GUI flashing should no longer appear, as all moving operations have been replaced.

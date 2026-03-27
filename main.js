@@ -1,4 +1,5 @@
 const { entrypoints } = require("uxp");
+const { localFileSystem, formats } = require("uxp").storage;
 const { app } = require("photoshop");
 
 const config = require("./config");
@@ -165,6 +166,23 @@ async function onGenerate() {
             : await workflow.extractRegionAsBase64(doc, bounds, true);
         const initImgB64 = await workflow.extractRegionAsBase64(doc, bounds, false);
 
+        // DEBUG: save mask and init image to temp folder
+        const debugSave = async (b64, filename) => {
+            try {
+                const binary = atob(b64);
+                const bytes = new Uint8Array(binary.length);
+                for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+                const tmpFolder = await localFileSystem.getTemporaryFolder();
+                const file = await tmpFolder.createFile(filename, { overwrite: true });
+                await file.write(bytes.buffer, { format: formats.binary });
+                console.log(`[spice] Debug saved: ${file.nativePath}`);
+            } catch (e) {
+                console.error(`[spice] Debug save failed for ${filename}:`, e);
+            }
+        };
+        await debugSave(maskImgB64, "debug_mask.png");
+        await debugSave(initImgB64, "debug_input_image.png");
+
         // API Call using dynamic settings
         const payload = {
             "prompt": promptVal,
@@ -235,6 +253,8 @@ async function onGenerate() {
         const resultB64 = json.images ? json.images[0] : null;
 
         if (!resultB64) throw new Error("API returned no image data.");
+
+        await debugSave(resultB64, "debug_output_image.png");
 
         await workflow.placeResultOnLayer(doc, resultB64, bounds);
 

@@ -186,7 +186,7 @@ function decodePNG(bytes) {
     return { rgba, width, height };
 }
 
-// Encodes raw RGBA pixels into a PNG and returns a base64 string.
+// Encodes raw RGBA pixels into a 24-bit RGB PNG and returns a base64 string.
 // Uses only typed arrays — no canvas or browser globals required.
 function encodeRGBAtoPNG(rgba, width, height) {
     // CRC32 lookup table
@@ -218,18 +218,24 @@ function encodeRGBAtoPNG(rgba, width, height) {
         return out;
     }
 
-    // IHDR: width, height, 8-bit RGBA
+    // IHDR: width, height, 8-bit RGB
     const ihdr = new Uint8Array(13);
     new DataView(ihdr.buffer).setUint32(0, width);
     new DataView(ihdr.buffer).setUint32(4, height);
-    ihdr[8] = 8; ihdr[9] = 6; // bit depth=8, color type=RGBA
+    ihdr[8] = 8; ihdr[9] = 2; // bit depth=8, color type=RGB
 
-    // Raw scanlines: prepend filter byte 0 (None) to each row
-    const rowBytes = width * 4;
+    // Raw scanlines: prepend filter byte 0 (None) to each row, strip alpha
+    const rowBytes = width * 3;
     const raw = new Uint8Array(height * (rowBytes + 1));
     for (let y = 0; y < height; y++) {
         raw[y * (rowBytes + 1)] = 0;
-        raw.set(rgba.subarray(y * rowBytes, (y + 1) * rowBytes), y * (rowBytes + 1) + 1);
+        for (let x = 0; x < width; x++) {
+            const src = (y * width + x) * 4;
+            const dst = y * (rowBytes + 1) + 1 + x * 3;
+            raw[dst]     = rgba[src];
+            raw[dst + 1] = rgba[src + 1];
+            raw[dst + 2] = rgba[src + 2];
+        }
     }
 
     // Adler-32 checksum over raw data
